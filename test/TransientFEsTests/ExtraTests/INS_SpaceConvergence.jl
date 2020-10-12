@@ -14,15 +14,15 @@ using LineSearches: BackTracking
 using Gridap.Algebra: NewtonRaphsonSolver
 
 @law conv(u, ∇u) = (∇u') ⋅ u
-@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) + conv(du, ∇u) #Changing to using the linear solver
+@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ 0.5*(∇⋅u) * du #Changing to using the linear solver
 
 θ = 1
 
 k=2*pi
-u(x,t) = VectorValue(-cos(k*x[1])*sin(k*x[2]),cos(k*x[1])*sin(k*x[2]))*(t+1)
+u(x,t) = VectorValue(-cos(k*x[1])*sin(k*x[2]),cos(k*x[1])*sin(k*x[2]))*(t)
 u(t::Real) = x -> u(x,t)
 
-p(x,t) = k*sin(k*x[1])*sin(k*x[2])*(t+1)
+p(x,t) = k*(sin(k*x[1])-sin(k*x[2]))*t
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
@@ -167,7 +167,7 @@ function conv_test(ns)
 end
 
 ID = 1
-ns = [8,16,24,32]
+ns = [8,16,24]
 
 global ID = ID+1
 eul2s, epl2s, hs = conv_test(ns);
