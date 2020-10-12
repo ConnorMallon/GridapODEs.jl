@@ -1,6 +1,7 @@
 abstract type ButcherTableauType end
 
 struct BE_1_0_1 <: ButcherTableauType end
+struct SIE_2_1 <: ButcherTableauType end
 struct SDIRK_2_1_2 <: ButcherTableauType end
 struct TRBDF2_3_3_2 <: ButcherTableauType end
 
@@ -31,14 +32,25 @@ function ButcherTableau(::BE_1_0_1)
   ButcherTableau{BE_1_0_1()}(s,p,q,a,b,c,d)
 end
 
+function ButcherTableau(type::SIE_2_1)
+  s = 2
+  p = 0
+  q = 1
+  a = [0.0 0.0; 1.0 0.0]
+  b = [1.0, 0.0]
+  c = [0.0, 1.0]
+  d = [0.0, 0.0]
+  ButcherTableau{SIE_2_1}(s,p,q,a,b,c,d)
+end
+
 function ButcherTableau(type::SDIRK_2_1_2)
-s = 2
-p = 1
-q = 2
-a = [1.0 0.0; -1.0 1.0]
-b = [0.5, 0.5]
-c = [1.0, 0.0]
-d = [1.0, 0.0]
+  s = 2
+  p = 1
+  q = 2
+  a = [1.0 0.0; -1.0 1.0]
+  b = [0.5, 0.5]
+  c = [1.0, 0.0]
+  d = [1.0, 0.0]
 ButcherTableau{SDIRK_2_1_2}(s,p,q,a,b,c,d)
 end
 
@@ -109,7 +121,7 @@ function solve_step!(uf::AbstractVector,
 
     # Skip stage solve if a_ii=0 => u_i=u_0, f_i = f_0
     if(a[i,i]==0)
-      @assert c[i] == 0
+      #@assert c[i] == 0
       ti = t0
       update!(nlop,ti,fi,i)
       fi[i] = get_fi(u0,nlop,nl_cache)

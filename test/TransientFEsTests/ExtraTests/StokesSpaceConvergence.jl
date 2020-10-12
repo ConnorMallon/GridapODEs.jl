@@ -1,4 +1,4 @@
-module StokesEquationTests
+module StokesEquationConvergenceTests
 
 using Gridap
 using ForwardDiff
@@ -12,22 +12,27 @@ using Gridap.FESpaces: get_algebraic_operator
 import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
 
-θ = 0
+θ = 0.0001
 
 k=2*pi
-u(x,t) = VectorValue(x[1],x[2])*t
+u(x,t) = VectorValue(-cos(k*x[1])*sin(k*x[2]),cos(k*x[1])*sin(k*x[2]))*(t+1)
 u(t::Real) = x -> u(x,t)
 
-p(x,t) = (x[1]-x[2])*t
+p(x,t) = k*sin(k*x[1])*sin(k*x[2])*(t+1)
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
-f(t) = x -> ∂t(u)(t)(x) - Δ(u(t))(x) + ∇(p(t))(x)
+f(t) = x -> ∂t(u)(t)(x)-Δ(u(t))(x)+ ∇(p(t))(x)
 g(t) = x -> (∇⋅u(t))(x)
 
+function run_test(n)
+
+#n=16
+
 domain = (0,1,0,1)
-partition = (2,2)
+partition = (n,n)
 model = CartesianDiscreteModel(domain,partition)
+h=1/n
 
 order = 2
 
@@ -52,8 +57,8 @@ degree = 2*order
 quad = CellQuadrature(trian,degree)
 
 #
-m(u,v) = u⊙v
-a(u,v) = ∇(u)⊙∇(v)
+a(u,v) = inner(∇(u),∇(v))
+b(v,t) = inner(v,f(t))
 
 X = TransientMultiFieldFESpace([U,P])
 Y = MultiFieldFESpace([V0,Q])
@@ -62,19 +67,19 @@ function res(t,x,xt,y)
   u,p = x
   ut,pt = xt
   v,q = y
-  m(ut,v) + a(u,v) - (∇⋅v)*p + q*(∇⋅u) - v⋅f(t) - q*g(t)
+  a(u,v) + inner(ut,v) - (∇⋅v)*p + q*(∇⋅u) - inner(v,f(t)) - q*g(t)
 end
 
 function jac(t,x,xt,dx,y)
   du,dp = dx
   v,q = y
-  ( a(du,v)- (∇⋅v)*dp + q*(∇⋅du) ) 
+  a(du,v)- (∇⋅v)*dp + q*(∇⋅du)
 end
 
 function jac_t(t,x,xt,dxt,y)
   dut,dpt = dxt
   v,q = y
-  m(dut,v)
+  inner(dut,v)
 end
 
 function b(y)
@@ -89,19 +94,15 @@ function mat(dx,y)
   a(du1,v1)+a(du2,v2)
 end
 
-U0 = U(0.0)
-P0 = P(0.0)
 X0 = X(0.0)
-uh0 = interpolate_everywhere(u(0.0),U0)
-ph0 = interpolate_everywhere(p(0.0),P0)
-xh0 = interpolate_everywhere([uh0,ph0],X0)
+xh0 = interpolate_everywhere([u(0.0),p(0.0)],X0)
 
 t_Ω = FETerm(res,jac,jac_t,trian,quad)
-op  = TransientFEOperator(X,Y,t_Ω)
+op = TransientFEOperator(X,Y,t_Ω)
 
 t0 = 0.0
 tF = 1.0
-dt = 0.1
+dt = 1.0
 
 ls = LUSolver()
 odes = ThetaMethod(ls,dt,θ)
@@ -115,24 +116,70 @@ tol = 1.0e-6
 _t_n = t0
 
 result = Base.iterate(sol_t)
+l2(w) = w⋅w
 
-uh0 = xh0.single_fe_functions[1]
-@show el20 =sqrt(sum( integrate(l2(u(0.0)-uh0),trian,quad) ))
-#@test el20 < tol
+tol = 1.0e-6
+_t_n = t0
+
+us = []
+eul2=[]
+epl2=[]
 
 for (xh_tn, tn) in sol_t
-  global _t_n
   _t_n += dt
   uh_tn = xh_tn[1]
   ph_tn = xh_tn[2]
   e = u(tn) - uh_tn
-  eul2 = sqrt(sum( integrate(l2(e),trian,quad) ))
-  @show eul2
-  #@test el2 < tol
+  eul2i = sqrt(sum( integrate(l2(e),trian,quad) ))
   e = p(tn) - ph_tn
-  epl2 = sqrt(sum( integrate(l2(e),trian,quad) ))
-  @show epl2
-  #@test el2 < tol
+  epl2i = sqrt(sum( integrate(l2(e),trian,quad) ))
+  push!(eul2,eul2i)
+  push!(epl2,epl2i)
 end
+
+eul2=last(eul2)
+epl2=last(epl2)
+
+println(dt)
+
+(eul2, epl2, h)
+
+end
+
+function conv_test(ns)
+
+  eul2s = Float64[]
+  epl2s = Float64[]
+  hs = Float64[]
+
+  for n in ns
+
+    eul2, epl2, h = run_test(n)
+
+    push!(eul2s,eul2)
+    push!(epl2s,epl2)
+    push!(hs,h)
+
+  end
+
+  (eul2s, epl2s,  hs)
+
+end
+
+ID = 1
+ns = [8,16,24,32,48]
+
+global ID = ID+1
+eul2s, epl2s, hs = conv_test(ns);
+@show hs
+
+using Plots
+plot(hs,[eul2s, epl2s],
+    xaxis=:log, yaxis=:log,
+    label=["L2U" "L2P"],
+    shape=:auto,
+    xlabel="h",ylabel="L2 error norm",
+    title = "StokesSpaceConvergemce,ID=$(ID)")
+savefig("Stokes_SpaceConvergence_$(ID)")
 
 end #module

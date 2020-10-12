@@ -7,12 +7,16 @@ using Test
 using GridapODEs.ODETools
 using GridapODEs.TransientFETools
 using Gridap.FESpaces: get_algebraic_operator
-
-# using GridapODEs.ODETools: ThetaMethodLinear
+using GridapEmbedded
 import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
+using LineSearches: BackTracking
+using Gridap.Algebra: NewtonRaphsonSolver
 
-θ = 0
+@law conv(u, ∇u) = (∇u') ⋅ u
+@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ conv(du, ∇u) #Changing to using the linear solver
+
+θ = 1
 
 k=2*pi
 u(x,t) = VectorValue(x[1],x[2])*t
@@ -22,7 +26,7 @@ p(x,t) = (x[1]-x[2])*t
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
-f(t) = x -> ∂t(u)(t)(x) - Δ(u(t))(x) + ∇(p(t))(x)
+f(t) = x -> ∂t(u)(t)(x) - Δ(u(t))(x) + ∇(p(t))(x) + conv(u(t)(x),∇(u(t))(x)) 
 g(t) = x -> (∇⋅u(t))(x)
 
 domain = (0,1,0,1)
@@ -54,6 +58,8 @@ quad = CellQuadrature(trian,degree)
 #
 m(u,v) = u⊙v
 a(u,v) = ∇(u)⊙∇(v)
+c_Ω(u, v) = v ⊙ conv(u, ∇(u))
+dc_Ω(u, du, v) = v ⊙ dconv(du, ∇(du), u, ∇(u))
 
 X = TransientMultiFieldFESpace([U,P])
 Y = MultiFieldFESpace([V0,Q])
@@ -62,13 +68,14 @@ function res(t,x,xt,y)
   u,p = x
   ut,pt = xt
   v,q = y
-  m(ut,v) + a(u,v) - (∇⋅v)*p + q*(∇⋅u) - v⋅f(t) - q*g(t)
+  m(ut,v) + a(u,v) - (∇⋅v)*p + q*(∇⋅u) - v⋅f(t) - q*g(t) + c_Ω(u, v) 
 end
 
 function jac(t,x,xt,dx,y)
+  u, p = x
   du,dp = dx
   v,q = y
-  ( a(du,v)- (∇⋅v)*dp + q*(∇⋅du) ) 
+   a(du,v) - (∇⋅v)*dp + q*(∇⋅du) + dc_Ω(u, du, v) 
 end
 
 function jac_t(t,x,xt,dxt,y)
@@ -77,33 +84,24 @@ function jac_t(t,x,xt,dxt,y)
   m(dut,v)
 end
 
-function b(y)
-  v,q = y
-  0.0
-  v⋅f(0.0) + q*g(0.0)
-end
-
-function mat(dx,y)
-  du1,du2 = dx
-  v1,v2 = y
-  a(du1,v1)+a(du2,v2)
-end
-
-U0 = U(0.0)
-P0 = P(0.0)
 X0 = X(0.0)
-uh0 = interpolate_everywhere(u(0.0),U0)
-ph0 = interpolate_everywhere(p(0.0),P0)
-xh0 = interpolate_everywhere([uh0,ph0],X0)
+xh0 = interpolate_everywhere([u(0.0),p(0.0)],X0)
 
 t_Ω = FETerm(res,jac,jac_t,trian,quad)
-op  = TransientFEOperator(X,Y,t_Ω)
+op = TransientFEOperator(X,Y,t_Ω)
 
 t0 = 0.0
 tF = 1.0
-dt = 0.1
+dt = 1.0
 
 ls = LUSolver()
+
+nls = NLSolver(
+    show_trace = false,
+    method = :newton,
+    linesearch = BackTracking(),
+)
+
 odes = ThetaMethod(ls,dt,θ)
 solver = TransientFESolver(odes)
 
@@ -116,9 +114,14 @@ _t_n = t0
 
 result = Base.iterate(sol_t)
 
+# #=
 uh0 = xh0.single_fe_functions[1]
 @show el20 =sqrt(sum( integrate(l2(u(0.0)-uh0),trian,quad) ))
+
+ph0 = xh0.single_fe_functions[2]
+@show ep20 =sqrt(sum( integrate(l2(p(0.0)-ph0),trian,quad) ))
 #@test el20 < tol
+# =#
 
 for (xh_tn, tn) in sol_t
   global _t_n
