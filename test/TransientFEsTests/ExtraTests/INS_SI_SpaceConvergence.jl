@@ -1,4 +1,4 @@
-module StokesEquationTests
+module INS_SI_EquationTests
 
 using Gridap
 using ForwardDiff
@@ -7,7 +7,7 @@ using Test
 using GridapODEs.ODETools
 using GridapODEs.TransientFETools
 using Gridap.FESpaces: get_algebraic_operator
-using GridapEmbedded
+#using GridapEmbedded
 import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
 using LineSearches: BackTracking
@@ -19,10 +19,10 @@ using Gridap.Algebra: NewtonRaphsonSolver
 θ = 1
 
 k=2*pi
-u(x,t) = VectorValue(-sin(k*x[1])*sin(k*x[2]),cos(k*x[1])*cos(k*x[2]))*(t)
+u(x,t) = VectorValue(-cos(k*x[1])*sin(k*x[2]),sin(k*x[1])*cos(k*x[2]))#*(t)
 u(t::Real) = x -> u(x,t)
 
-p(x,t) = k*(sin(k*x[1])-sin(k*x[2]))*t
+p(x,t) = k*(sin(k*x[1])-sin(k*x[2]))#*t
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
@@ -71,14 +71,14 @@ function res(t,x,xt,y)
   u,p = x
   ut,pt = xt
   v,q = y
-  m(ut,v) + a(u,v) - (∇⋅v)*p + q*(∇⋅u) - v⋅f(t) - q*g(t) + c_Ω(u, v) 
+  m(ut,v) + a(u,v) - (∇⋅v)*p + q*(∇⋅u) - v⋅f(t) - q*g(t) + c_Ω(u, v) #+ 0.5 * (∇⋅u) * u ⊙ v
 end
 
 function jac(t,x,xt,dx,y)
   u, p = x
   du,dp = dx
   v,q = y
-  a(du,v)- (∇⋅v)*dp + q*(∇⋅du) + dc_Ω(u, du, v)
+  a(du,v)- (∇⋅v)*dp + q*(∇⋅du) + dc_Ω(u, du, v) #+ 0.5 * (∇⋅u) * du ⊙ v
 end
 
 function jac_t(t,x,xt,dxt,y)
@@ -94,8 +94,8 @@ t_Ω = FETerm(res,jac,jac_t,trian,quad)
 op = TransientFEOperator(X,Y,t_Ω)
 
 t0 = 0.0
-tF = 0.01
-dt = 0.01
+tF = 1.0
+dt = 1.0
 
 ls = LUSolver()
 
@@ -166,7 +166,7 @@ function conv_test(ns)
 
 end
 
-ID = 1
+ID = 0
 ns = [8,16,24,48]
 
 global ID = ID+1
@@ -179,8 +179,8 @@ plot(hs,[eul2s, epl2s],
     label=["L2U" "L2P"],
     shape=:auto,
     xlabel="h",ylabel="L2 error norm",
-    title = "INS_SpaceConvergemce,ID=$(ID)")
-savefig("INS_SpaceConvergence_$(ID)")
+    title = "INS__SI_SpaceConvergemce,ID=$(ID)")
+savefig("INS_SI_SpaceConvergence_$(ID)")
 
 end #module
 

@@ -7,14 +7,14 @@ using Test
 using GridapODEs.ODETools
 using GridapODEs.TransientFETools
 using Gridap.FESpaces: get_algebraic_operator
-using GridapEmbedded
+#using GridapEmbedded
 import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
 using LineSearches: BackTracking
 using Gridap.Algebra: NewtonRaphsonSolver
 
 @law conv(u, ∇u) = (∇u') ⋅ u
-@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ (∇⋅u) #0.5*divergence(u) * du #Changing to using the linear solver
+@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) + conv(du, ∇u) #+ (∇⋅u) #0.5*divergence(u) * du #Changing to using the linear solver
 
 θ = 1
 
@@ -94,8 +94,8 @@ t_Ω = FETerm(res,jac,jac_t,trian,quad)
 op = TransientFEOperator(X,Y,t_Ω)
 
 t0 = 0.0
-tF = 0.01
-dt = 0.01
+tF = 1.0
+dt = 1.0
 
 ls = LUSolver()
 
@@ -105,7 +105,7 @@ nls = NLSolver(
     linesearch = BackTracking(),
 )
 
-odes = ThetaMethod(ls,dt,θ)
+odes = ThetaMethod(nls,dt,θ)
 solver = TransientFESolver(odes)
 
 sol_t = solve(solver,op,xh0,t0,tF)
@@ -166,7 +166,7 @@ function conv_test(ns)
 
 end
 
-ID = 1
+ID = 0
 ns = [8,16,24,48]
 
 global ID = ID+1

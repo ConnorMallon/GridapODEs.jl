@@ -1,5 +1,9 @@
 module StokesEquationTests
 
+# using GridapODEs.ODETools: ThetaMethodLinear
+import Gridap: ∇
+import GridapODEs.TransientFETools: ∂t
+
 using Gridap
 using ForwardDiff
 using LinearAlgebra
@@ -7,26 +11,25 @@ using Test
 using GridapODEs.ODETools
 using GridapODEs.TransientFETools
 using Gridap.FESpaces: get_algebraic_operator
-using GridapEmbedded
+#using GridapEmbedded
 import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
 using LineSearches: BackTracking
 using Gridap.Algebra: NewtonRaphsonSolver
 
 @law conv(u, ∇u) = (∇u') ⋅ u
-@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ conv(du, ∇u) #Changing to using the linear solver
+@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) + conv(du, ∇u) 
 
-θ = 1
+θ = 1.0
 
-k=2*pi
-u(x,t) = VectorValue(x[1],x[2])*t
+u(x,t) = VectorValue(x[1],-x[2])#*t
 u(t::Real) = x -> u(x,t)
 
-p(x,t) = (x[1]-x[2])*t
+p(x,t) = (x[1]-x[2])#*t
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
-f(t) = x -> ∂t(u)(t)(x) - Δ(u(t))(x) + ∇(p(t))(x) + conv(u(t)(x),∇(u(t))(x)) 
+f(t) = x -> ∂t(u)(t)(x) - Δ(u(t))(x) + ∇(p(t))(x) + conv(u(t)(x),∇(u(t))(x))
 g(t) = x -> (∇⋅u(t))(x)
 
 domain = (0,1,0,1)
@@ -56,8 +59,8 @@ degree = 2*order
 quad = CellQuadrature(trian,degree)
 
 #
-m(u,v) = u⊙v
-a(u,v) = ∇(u)⊙∇(v)
+a(u,v) = inner(∇(u),∇(v))
+b(v,t) = inner(v,f(t))
 c_Ω(u, v) = v ⊙ conv(u, ∇(u))
 dc_Ω(u, du, v) = v ⊙ dconv(du, ∇(du), u, ∇(u))
 
@@ -68,24 +71,40 @@ function res(t,x,xt,y)
   u,p = x
   ut,pt = xt
   v,q = y
-  m(ut,v) + a(u,v) - (∇⋅v)*p + q*(∇⋅u) - v⋅f(t) - q*g(t) + c_Ω(u, v) 
+  a(u,v) + inner(ut,v) - (∇⋅v)*p + q*(∇⋅u) - inner(v,f(t)) - q*g(t) + c_Ω(u, v) #+ 0.5 * (∇⋅u) * u ⊙ v
 end
 
 function jac(t,x,xt,dx,y)
   u, p = x
   du,dp = dx
   v,q = y
-   a(du,v) - (∇⋅v)*dp + q*(∇⋅du) + dc_Ω(u, du, v) 
+  a(du,v)- (∇⋅v)*dp + q*(∇⋅du) + dc_Ω(u, du, v)  #+ 0.5 * (∇⋅u) * du ⊙ v 
 end
 
 function jac_t(t,x,xt,dxt,y)
   dut,dpt = dxt
   v,q = y
-  m(dut,v)
+  inner(dut,v)
 end
 
+function b(y)
+  v,q = y
+  0.0
+  v⋅f(0.0) + q*g(0.0)
+end
+
+function mat(dx,y)
+  du1,du2 = dx
+  v1,v2 = y
+  a(du1,v1)+a(du2,v2)
+end
+
+U0 = U(0.0)
+P0 = P(0.0)
 X0 = X(0.0)
-xh0 = interpolate_everywhere([u(0.0),p(0.0)],X0)
+uh0 = interpolate_everywhere(u(0.0),U0)
+ph0 = interpolate_everywhere(p(0.0),P0)
+xh0 = interpolate_everywhere([uh0,ph0],X0)
 
 t_Ω = FETerm(res,jac,jac_t,trian,quad)
 op = TransientFEOperator(X,Y,t_Ω)
@@ -95,16 +114,16 @@ tF = 1.0
 dt = 1.0
 
 ls = LUSolver()
-
 nls = NLSolver(
     show_trace = false,
     method = :newton,
     linesearch = BackTracking(),
 )
 
+#odes = ForwardEuler(ls,dt)
 odes = ThetaMethod(ls,dt,θ)
-solver = TransientFESolver(odes)
 
+solver = TransientFESolver(odes)
 sol_t = solve(solver,op,xh0,t0,tF)
 
 l2(w) = w⋅w
@@ -129,13 +148,10 @@ for (xh_tn, tn) in sol_t
   uh_tn = xh_tn[1]
   ph_tn = xh_tn[2]
   e = u(tn) - uh_tn
-  eul2 = sqrt(sum( integrate(l2(e),trian,quad) ))
-  @show eul2
-  #@test el2 < tol
+  el2 = sqrt(sum( integrate(l2(e),trian,quad) ))
   e = p(tn) - ph_tn
-  epl2 = sqrt(sum( integrate(l2(e),trian,quad) ))
-  @show epl2
-  #@test el2 < tol
+  el2 = sqrt(sum( integrate(l2(e),trian,quad) ))
+  @test el2 < tol
 end
 
 end #module
