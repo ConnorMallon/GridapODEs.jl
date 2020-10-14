@@ -13,14 +13,18 @@ import GridapODEs.TransientFETools: ∂t
 using LineSearches: BackTracking
 using Gridap.Algebra: NewtonRaphsonSolver
 
+
+
+
+
+#Testing parameters
+θ = 1
+νs = [1,0.1,0.01]
+
 @law conv(u, ∇u) = (∇u') ⋅ u
 @law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ (∇⋅u) #0.5*divergence(u) * du #Changing to using the linear solver
 
-θ = 1
-
-ν = 0.01
 k=2*pi
-
 u(x,t) = VectorValue(-cos(k*x[1])*sin(k*x[2]),sin(k*x[1])*cos(k*x[2]))*(t)
 u(t::Real) = x -> u(x,t)
 
@@ -28,15 +32,16 @@ p(x,t) = k*(sin(k*x[1])-sin(k*x[2]))*t
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
+
+function run_test(n,ν)
+
 f(t) = x -> ∂t(u)(t)(x) - ν * Δ(u(t))(x) + ∇(p(t))(x) + conv(u(t)(x),∇(u(t))(x))
 g(t) = x -> (∇⋅u(t))(x)
 
-function run_test(n)
-
 domain = (0,1,0,1)
 partition = (n,n)
-model = CartesianDiscreteModel(domain,partition)
 h=1/n
+model = CartesianDiscreteModel(domain,partition)
 
 order = 2
 
@@ -61,8 +66,9 @@ degree = 2*order
 quad = CellQuadrature(trian,degree)
 
 #
-a(u,v) = ν *inner(∇(u),∇(v))
-b(v,t) = inner(v,f(t))
+
+m(u,v) = u⊙v
+a(u,v) = ν *  ∇(u)⊙∇(v)
 c_Ω(u, v) = v ⊙ conv(u, ∇(u))
 dc_Ω(u, du, v) = v ⊙ dconv(du, ∇(du), u, ∇(u))
 
@@ -73,42 +79,21 @@ function res(t,x,xt,y)
   u,p = x
   ut,pt = xt
   v,q = y
-  a(u,v) + inner(ut,v) - (∇⋅v)*p + q*(∇⋅u) - inner(v,f(t)) - q*g(t) + c_Ω(u, v) #+ 0.5 * (∇⋅u) * u ⊙ v
+  m(ut,v) + a(u,v) - (∇⋅v)*p + q*(∇⋅u) - v⋅f(t) - q*g(t) + c_Ω(u, v) #+ 0.5 * (∇⋅u) * u ⊙ v
 end
 
 function jac(t,x,xt,dx,y)
   u, p = x
   du,dp = dx
   v,q = y
-  a(du,v)- (∇⋅v)*dp + q*(∇⋅du) + dc_Ω(u, du, v)  #+ 0.5 * (∇⋅u) * du ⊙ v 
+  a(du,v)- (∇⋅v)*dp + q*(∇⋅du) + dc_Ω(u, du, v) #+ 0.5 * (∇⋅u) * du ⊙ v
 end
 
 function jac_t(t,x,xt,dxt,y)
   dut,dpt = dxt
   v,q = y
-  inner(dut,v)
+  m(dut,v)
 end
-
-function b(y)
-  v,q = y
-  0.0
-  v⋅f(0.0) + q*g(0.0)
-end
-
-function mat(dx,y)
-  du1,du2 = dx
-  v1,v2 = y
-  a(du1,v1)+a(du2,v2)
-end
-
-#=
-U0 = U(0.0)
-P0 = P(0.0)
-X0 = X(0.0)
-uh0 = interpolate(u(0.0),U0)
-ph0 = interpolate(p(0.0),P0)
-xh0 = interpolate([uh0,ph0],X0)
-=#
 
 X0 = X(0.0)
 xh0 = interpolate_everywhere([u(0.0),p(0.0)],X0)
@@ -118,27 +103,20 @@ op = TransientFEOperator(X,Y,t_Ω)
 
 t0 = 0.0
 tF = 1.0
-dt = 0.01
+dt = 1.0
 
 ls = LUSolver()
 
-#=
 nls = NLSolver(
     show_trace = false,
     method = :newton,
     linesearch = BackTracking(),
 )
-
-nls = NLSolver(ls;show_trace=true,method=:newton) #linesearch=BackTracking())
-=#
-
 nls = NewtonRaphsonSolver(ls,1e99,1)
 
-#odes = ForwardEuler(ls,dt)
 odes = ThetaMethod(nls,dt,θ)
-
-
 solver = TransientFESolver(odes)
+
 sol_t = solve(solver,op,xh0,t0,tF)
 
 l2(w) = w⋅w
@@ -177,7 +155,7 @@ println(dt)
 
 end
 
-function conv_test(ns)
+function conv_test(ns,ν)
 
   eul2s = Float64[]
   epl2s = Float64[]
@@ -185,7 +163,7 @@ function conv_test(ns)
 
   for n in ns
 
-    eul2, epl2, h = run_test(n)
+    eul2, epl2, h = run_test(n,ν)
 
     push!(eul2s,eul2)
     push!(epl2s,epl2)
@@ -200,17 +178,28 @@ end
 ID = 0
 ns = [8,16,24,48]
 
-global ID = ID+1
-eul2s, epl2s, hs = conv_test(ns);
-@show hs
-
 using Plots
-plot(hs,[eul2s, epl2s],
-    xaxis=:log, yaxis=:log,
-    label=["L2U" "L2P"],
-    shape=:auto,
-    xlabel="h",ylabel="L2 error norm",
-    title = "INS__SI_SpaceConvergemce,ID=$(ID)")
+plot()
+
+for ν in νs
+    global ID = ID+1
+    eul2s, epl2s, hs = conv_test(ns,ν);
+    @show hs
+
+    plot!(hs,
+      [eul2s, epl2s],
+      #[epl2s],
+      
+      xaxis=:log, yaxis=:log,
+      
+      label=["L2U $(ν)" "L2P $(ν)"],
+      #label=["L2P $(ν)"],
+      
+      shape=:auto,
+      xlabel="h",ylabel="L2 error norm",
+      title = "INS__SI_SpaceConvergemce,ID=$(ID)")
+end
+  
 savefig("INS_SI_SpaceConvergence_$(ID)")
 
 end #module

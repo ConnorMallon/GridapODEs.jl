@@ -7,6 +7,7 @@ using Test
 using GridapODEs.ODETools
 using GridapODEs.TransientFETools
 using Gridap.FESpaces: get_algebraic_operator
+using Gridap.Algebra: NewtonRaphsonSolver
 
 import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
@@ -23,7 +24,7 @@ v(x) = t -> u(x,t)
 ∂tu(t) = x -> ForwardDiff.derivative(v(x),t)
 ∂tu(x,t) = ∂tu(t)(x)
 ∂t(::typeof(u)) = ∂tu
-f(t) = x -> ∂t(u)(x,t)-Δ(u(t))(x) + u(t)(x)^2 
+f(t) = x -> ∂t(u)(x,t) - Δ(u(t))(x) + u(t)(x)^2 
 
 
 domain = (0,1,0,1)
@@ -62,8 +63,11 @@ U0 = U(0.0)
 uh0 = interpolate_everywhere(u(0.0),U0)
 
 ls = LUSolver()
-using Gridap.Algebra: NewtonRaphsonSolver
+
 nls = NLSolver(ls;show_trace=true,method=:newton) #linesearch=BackTracking())
+
+nls = NewtonRaphsonSolver(ls,1e99,1)
+
 odes = ThetaMethod(nls,dt,θ)
 solver = TransientFESolver(odes)
 

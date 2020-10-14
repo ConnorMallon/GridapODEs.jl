@@ -18,18 +18,20 @@ using LineSearches: BackTracking
 using Gridap.Algebra: NewtonRaphsonSolver
 
 @law conv(u, ∇u) = (∇u') ⋅ u
-@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) + conv(du, ∇u) 
+@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ conv(du, ∇u) 
 
 θ = 1.0
 
-u(x,t) = VectorValue(x[1],-x[2])#*t
+ν = 0.01
+
+u(x,t) = VectorValue(x[1],-x[2])*x[1]#*t
 u(t::Real) = x -> u(x,t)
 
 p(x,t) = (x[1]-x[2])#*t
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
-f(t) = x -> ∂t(u)(t)(x) - Δ(u(t))(x) + ∇(p(t))(x) + conv(u(t)(x),∇(u(t))(x))
+f(t) = x -> ∂t(u)(t)(x) - ν * Δ(u(t))(x) + ∇(p(t))(x) + conv(u(t)(x),∇(u(t))(x))
 g(t) = x -> (∇⋅u(t))(x)
 
 domain = (0,1,0,1)
@@ -59,7 +61,7 @@ degree = 2*order
 quad = CellQuadrature(trian,degree)
 
 #
-a(u,v) = inner(∇(u),∇(v))
+a(u,v) = ν *inner(∇(u),∇(v))
 b(v,t) = inner(v,f(t))
 c_Ω(u, v) = v ⊙ conv(u, ∇(u))
 dc_Ω(u, du, v) = v ⊙ dconv(du, ∇(du), u, ∇(u))
@@ -114,14 +116,22 @@ tF = 1.0
 dt = 1.0
 
 ls = LUSolver()
+
+#=
 nls = NLSolver(
     show_trace = false,
     method = :newton,
     linesearch = BackTracking(),
 )
 
+nls = NLSolver(ls;show_trace=true,method=:newton) #linesearch=BackTracking())
+=#
+
+nls = NewtonRaphsonSolver(ls,1e99,1)
+
 #odes = ForwardEuler(ls,dt)
-odes = ThetaMethod(ls,dt,θ)
+odes = ThetaMethod(nls,dt,θ)
+
 
 solver = TransientFESolver(odes)
 sol_t = solve(solver,op,xh0,t0,tF)
@@ -151,6 +161,7 @@ for (xh_tn, tn) in sol_t
   el2 = sqrt(sum( integrate(l2(e),trian,quad) ))
   e = p(tn) - ph_tn
   el2 = sqrt(sum( integrate(l2(e),trian,quad) ))
+  @show el2
   @test el2 < tol
 end
 

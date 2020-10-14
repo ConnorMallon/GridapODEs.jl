@@ -13,7 +13,7 @@ import GridapODEs.TransientFETools: ∂t
 
 θ = 1
 
-u(x,t) = (x[1]+x[2])*t
+u(x,t) = (x[1]+x[2])#*t
 u(t::Real) = x -> u(x,t)
 f(t) = x -> ∂t(u)(x,t)-Δ(u(t))(x)
 
@@ -38,7 +38,7 @@ a(u,v) = ∇(v)⋅∇(u)
 b(v,t) = v*f(t)
 
 res(t,u,ut,v) = a(u,v) + ut*v - b(v,t)
-jac(t,u,ut,du,v) = 0*a(du,v)
+jac(t,u,ut,du,v) = a(du,v)
 jac_t(t,u,ut,dut,v) = dut*v
 
 t_Ω = FETerm(res,jac,jac_t,trian,quad)
@@ -46,7 +46,7 @@ op = TransientFEOperator(U,V0,t_Ω)
 
 t0 = 0.0
 tF = 1.0
-dt = 0.1
+dt = 1.0
 
 U0 = U(0.0)
 uh0 = interpolate_everywhere(u(0.0),U0)
