@@ -51,15 +51,18 @@ q(x) = t -> p(x,t)
 f(t) = x -> ρ * ∂t(u)(t)(x) - μ * Δ(u(t))(x) + ∇(p(t))(x) + ρ * conv(u(t)(x),∇(u(t))(x)) 
 g(t) = x -> (∇⋅u(t))(x)
 
+ud(t)=u(t)
+
+n=10
 domain = (0,1,0,1)
-partition = (2,2)
+partition = (n,n)
 model = simplexify(CartesianDiscreteModel(domain,partition))
 
 order = 1
 
 V0 = FESpace(
   reffe=:PLagrangian, order=order, valuetype=VectorValue{2,Float64},
-  conformity=:H1, model=model, dirichlet_tags="boundary")
+  conformity=:H1, model=model)#, dirichlet_tags="boundary")
 
 Q = TestFESpace(
   model=model,
@@ -69,13 +72,18 @@ Q = TestFESpace(
   conformity=:H1,
   constraint=:zeromean)
 
-U = TransientTrialFESpace(V0,u)
+U = TransientTrialFESpace(V0)
 
 P = TrialFESpace(Q)
 
 trian = Triangulation(model)
 degree = 2*order
 quad = CellQuadrature(trian,degree)
+
+trian_Γ = BoundaryTriangulation(model)
+degree_Γ = 2*order
+quad_Γ = CellQuadrature(trian_Γ,degree_Γ)
+n_Γ = get_normal_vector(trian_Γ)
 
 X = TransientMultiFieldFESpace([U,P])
 Y = MultiFieldFESpace([V0,Q])
@@ -108,6 +116,14 @@ sc_sΩ(w,u,v)    = τ_SUPG(w) * ρ *  conv(w,∇(v)) ⋅ conv(u, ∇(u))
 dsc_sΩ(w,u,du,v)= τ_SUPG(w) * ρ *  conv(w,∇(v)) ⋅ dconv(du, ∇(du), u, ∇(u)) 
 ϕ_sΩ(w,v,t)     = τ_SUPG(w)     *  conv(w,∇(v)) ⋅ f(t)  
 
+#NITSCHE
+α_γ = 35
+@law γ(u) =  α_γ * ( ν / h  +  ρ * maximum(u) / 6 ) # Nitsche Penalty parameter ( γ / h ) 
+
+#Boundary terms 
+a_Γ(u,v) = μ* ( - (n_Γ⋅∇(u))⋅v - u⋅(n_Γ⋅∇(v)) ) + ( γ(u)/h )*u⋅v 
+b_Γ(v,p) = (n_Γ⋅v)*p
+
 #Interior term collection
 function res_Ω(t,x,xt,y)
   u,p = x
@@ -136,6 +152,25 @@ function jac_tΩ(t,x,xt,dxt,y)
   - st_sΩ(u,dut,v) )
 end
 
+#Boundary term collection
+function res_Γ(t,x,xt,y)
+  u,p = x
+  ut,pt = xt
+  v,q = y
+  a_Γ(u,v)+b_Γ(u,q)+b_Γ(v,p) - ud(t) ⊙(  ( γ(u)/h )*v - μ * n_Γ⋅∇(v) + q*n_Γ )
+end
+
+function jac_Γ(t,x,xt,dx,y)
+  du,dp = dx
+  v,q = y
+  a_Γ(du,v)+b_Γ(du,q)+b_Γ(v,dp)
+end
+
+function jac_tΓ(t,x,xt,dxt,y)
+  dut,dpt = dxt
+  v,q = y
+  0*m_Ω(dut,v)
+end
  
 U0 = U(0.0)
 P0 = P(0.0)
@@ -145,7 +180,9 @@ ph0 = interpolate_everywhere(p(0.0),P0)
 xh0 = interpolate_everywhere([uh0,ph0],X0)
 
 t_Ω = FETerm(res_Ω,jac_Ω,jac_tΩ,trian,quad)
-op = TransientFEOperator(X,Y,t_Ω)
+t_Γ = FETerm(res_Γ,jac_Γ,jac_tΓ,trian_Γ,quad_Γ)
+
+op = TransientFEOperator(X,Y,t_Ω,t_Γ)#,t_Γg)#,t_Γn)
 
 ls = LUSolver()
 
@@ -164,9 +201,7 @@ nls = NewtonRaphsonSolver(ls,1e-10,40)
 
 #odes = ForwardEuler(ls,dt)
 
-
 odes = ThetaMethod(nls,dt,θ)
-
 
 solver = TransientFESolver(odes)
 sol_t = solve(solver,op,xh0,t0,tF)
