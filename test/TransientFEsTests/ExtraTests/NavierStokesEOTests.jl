@@ -28,9 +28,9 @@ L = 1 #cm
 ρ =  1.06e-3 #kg/cm^3 
 μ =  3.50e-5 #kg/cm.s
 ν = μ/ρ 
-Δt =  0.046 #/ 100 #/ 1000 # 0.046  #s \\
+Δt =  0.046 / u_max #/ 100 #/ 1000 # 0.046  #s \\
 
-n=20
+n=10
 h=L/n
 
 @show  Re = ρ*u_max*L/μ
@@ -41,7 +41,7 @@ t0 = 0.0
 tF = Δt * n_t
 dt = Δt
 
-u(x,t) = VectorValue(x[1],-x[2]) *t
+u(x,t) = u_max * VectorValue(x[1],-x[2]) * (t/tF)
 u(t::Real) = x -> u(x,t)
 
 p(x,t) = (x[1]-x[2]) *t
@@ -172,13 +172,8 @@ function jac_tΓ(t,x,xt,dxt,y)
   0*m_Ω(dut,v)
 end
  
-U0 = U(0.0)
-P0 = P(0.0)
 X0 = X(0.0)
-uh0 = interpolate_everywhere(u(0.0),U0)
-ph0 = interpolate_everywhere(p(0.0),P0)
-xh0 = interpolate_everywhere([uh0,ph0],X0)
-
+xh0 = interpolate_everywhere(X0,[u(0.0),p(0.0)])
 t_Ω = FETerm(res_Ω,jac_Ω,jac_tΩ,trian,quad)
 t_Γ = FETerm(res_Γ,jac_Γ,jac_tΓ,trian_Γ,quad_Γ)
 
@@ -186,17 +181,17 @@ op = TransientFEOperator(X,Y,t_Ω,t_Γ)#,t_Γg)#,t_Γn)
 
 ls = LUSolver()
 
-#=
+
 nls = NLSolver(
-    show_trace = false,
+    show_trace = true,
     method = :newton,
     linesearch = BackTracking(),
 )
 
-nls = NLSolver(ls;show_trace=true,method=:newton) #linesearch=BackTracking())
-=#
+# nls = NLSolver(ls;show_trace=true,method=:newton) #linesearch=BackTracking())
 
-nls = NewtonRaphsonSolver(ls,1e-10,40)
+
+#nls = NewtonRaphsonSolver(ls,1e-10,40)
 #nls = NewtonRaphsonSolver(ls,1e99,1)
 
 #odes = ForwardEuler(ls,dt)

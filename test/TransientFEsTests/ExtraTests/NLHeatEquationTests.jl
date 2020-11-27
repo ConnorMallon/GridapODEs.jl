@@ -18,7 +18,8 @@ import GridapODEs.TransientFETools: ∂t
 # Analytical functions
 # u(x,t) = (x[1]+x[2])*t
 # u(x,t) = (2*x[1]+x[2])*t
-u(x,t) = (x[1]-x[2])*t
+u(x,t) = (x[1]+x[2])#*t
+
 u(t::Real) = x -> u(x,t)
 v(x) = t -> u(x,t)
 ∂tu(t) = x -> ForwardDiff.derivative(v(x),t)
@@ -49,7 +50,7 @@ c(u,v) = v*u*u
 dc(du,u,v) = v*2*u*du
 
 res(t,u,ut,v) = a(u,v) + ut*v - b(v,t) + c(u,v)
-jac(t,u,ut,du,v) = 0*(a(du,v) + dc(du,u,v))
+jac(t,u,ut,du,v) = a(du,v) + dc(du,u,v)
 jac_t(t,u,ut,dut,v) = dut*v
 
 t_Ω = FETerm(res,jac,jac_t,trian,quad)
@@ -57,14 +58,14 @@ op = TransientFEOperator(U,V0,t_Ω)
 
 t0 = 0.0
 tF = 1.0
-dt = 0.1
+dt = 1.0
 
 U0 = U(0.0)
 uh0 = interpolate_everywhere(u(0.0),U0)
 
 ls = LUSolver()
 
-nls = NLSolver(ls;show_trace=true,method=:newton) #linesearch=BackTracking())
+#nls = NLSolver(ls;show_trace=true,method=:newton) #linesearch=BackTracking())
 
 nls = NewtonRaphsonSolver(ls,1e99,1)
 
