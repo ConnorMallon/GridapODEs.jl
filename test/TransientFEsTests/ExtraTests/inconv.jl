@@ -1,4 +1,4 @@
-#Convergence for this module is the final stage - will confirm convergence of the final module - This involves the correct selectio nof all penalty parameters
+
 
 module INS
 
@@ -24,7 +24,7 @@ const ρ =  1.06e-3 #kg/cm^3
 const μ =  3.50e-5 #kg/cm.s
 const ν = μ/ρ 
 #const Δt =  0.046  # 0.046  #s \\
-dt = 0.1
+dt = 0.01
 Δt=dt
 
 const n_t= 10 #number of timesteps
@@ -48,7 +48,7 @@ p(x,t) = k* ( sin(k*x[1])-sin(k*x[2]) ) * (t/tF)
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
-f(t) = x -> ρ *  ∂t(u)(t)(x) + ρ *  conv(u(t)(x),∇(u(t))(x)) - μ * Δ(u(t))(x) + ∇(p(t))(x)
+f(t) = x -> ρ *  ∂t(u)(t)(x) - μ * Δ(u(t))(x) + ∇(p(t))(x) + ρ *  conv(u(t)(x),∇(u(t))(x))
 g(t) = x -> (∇⋅u(t))(x)
 
 u_Γn(t) = u(t)
@@ -169,11 +169,9 @@ for (xh_tn, tn) in sol_t
     _t_n += dt
     uh_tn = xh_tn[1]
     ph_tn = xh_tn[2]
-    uh_Ω = restrict(uh_tn,trian)
-    ph_Ω = restrict(ph_tn,trian)
-    e = u(tn) - uh_Ω
+    e = u(tn) - uh_tn
     eul2i = sqrt(sum( integrate(l2(e),trian,quad) ))
-    e = p(tn) - ph_Ω
+    e = p(tn) - ph_tn
     epl2i = sqrt(sum( integrate(l2(e),trian,quad) ))
     push!(eul2,eul2i)
     push!(epl2,epl2i)
@@ -209,7 +207,7 @@ function conv_test(ns)
 end
 
 ID = 2
-ns = [32,64,96]
+ns = [32,48,64,96]
 
 global ID = ID+1
 
