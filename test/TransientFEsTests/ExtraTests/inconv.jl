@@ -15,16 +15,16 @@ using LineSearches: BackTracking
 using Gridap.Algebra: NewtonRaphsonSolver
 
 @law conv(u, ∇u) = (∇u') ⋅ u
-@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) + conv(du, ∇u)
+@law dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ conv(du, ∇u)
 
 # Physical constants
-const u_max = 10 # 150 #cm/s
+const u_max = 100 # 150 #cm/s
 const L = 1 #cm
 const ρ =  1.06e-3 #kg/cm^3 
 const μ =  3.50e-5 #kg/cm.s
 const ν = μ/ρ 
 #const Δt =  0.046  # 0.046  #s \\
-dt = 1
+dt = 0.1
 Δt=dt
 
 const n_t= 10 #number of timesteps
@@ -48,12 +48,15 @@ p(x,t) = k* ( sin(k*x[1])-sin(k*x[2]) ) * (t/tF)
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
-f(t) = x ->  ∂t(u)(t)(x) +  conv(u(t)(x),∇(u(t))(x)) - ν * Δ(u(t))(x) + ∇(p(t))(x)
+f(t) = x -> ρ *  ∂t(u)(t)(x) + ρ *  conv(u(t)(x),∇(u(t))(x)) - μ * Δ(u(t))(x) + ∇(p(t))(x)
 g(t) = x -> (∇⋅u(t))(x)
 
 u_Γn(t) = u(t)
 p_Γn(t) = p(t)
 
+using Gridap.Algebra: NewtonRaphsonSolver
+
+@law conv(u, ∇u) = (∇u') ⋅ u
 function run_test(n)
 
 L=1
@@ -84,14 +87,15 @@ trian = Triangulation(model)
 degree = 2*order
 quad = CellQuadrature(trian,degree)
 
-a(u,v) = ν *inner(∇(u),∇(v))
+m(ut,v) = ρ * ut ⊙ v 
+a(u,v) = μ *inner(∇(u),∇(v))
 b(v,t) = inner(v,f(t))
-c_Ω(u, v) = v ⊙ conv(u, ∇(u))
-dc_Ω(u, du, v) = v ⊙ dconv(du, ∇(du), u, ∇(u))
+c_Ω(u, v) = ρ *  v ⊙ conv(u, ∇(u))
+dc_Ω(u, du, v) = ρ * v ⊙ dconv(du, ∇(du), u, ∇(u))
 
 #SUPG STABILISATION 
 #https://doi.org/10.1016/j.advengsoft.2018.02.004
-α_τ = 0.1 #Tunable coefficiant (0,1)
+α_τ = 0.01 #Tunable coefficiant (0,1)
 @law τ_SUPG(u) = α_τ * ( (2/ Δt )^2 + ( 2 * norm( u.data,2 ) / h )^2 + 9 * ( 4*ν / h^2 )^2 )^(-0.5) #
 #SUPG
 sp_sΩ(w,p,v)    = τ_SUPG(w)     *  conv(w,∇(v)) ⋅ ∇(p)
@@ -107,7 +111,7 @@ function res(t,x,xt,y)
   u,p = x
   ut,pt = xt
   v,q = y
-  ( a(u,v) + inner(ut,v) - (∇⋅v)*p + q*(∇⋅u) - inner(v,f(t)) - q*g(t) + c_Ω(u, v) #+ 0.5 * (∇⋅u) * u ⊙ v
+  ( m(ut,v) + a(u,v) - (∇⋅v)*p + q*(∇⋅u) - inner(v,f(t)) - q*g(t) + c_Ω(u, v) #+ 0.5 * (∇⋅u) * u ⊙ v
   - sp_sΩ(u,p,v) - st_sΩ(u,ut,v)  + ϕ_sΩ(u,v,t)    - sc_sΩ(u,u,v) )
 end
 
@@ -123,7 +127,7 @@ function jac_t(t,x,xt,dxt,y)
   u, p = x   
   dut,dpt = dxt
   v,q = y
-  ( inner(dut,v)
+  ( m(dut,v) 
   - st_sΩ(u,dut,v) )
 end
 
