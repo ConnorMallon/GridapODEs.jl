@@ -1,4 +1,4 @@
-module DGHeatEquationTests
+module StokesEquationTests
 
 using Gridap
 using ForwardDiff
@@ -8,27 +8,47 @@ using GridapODEs.ODETools
 using GridapODEs.TransientFETools
 using Gridap.FESpaces: get_algebraic_operator
 
-θ = 0.2
+# using GridapODEs.ODETools: ThetaMethodLinear
+import Gridap: ∇
+import GridapODEs.TransientFETools: ∂t
 
-u(x,t) = (1.0-x[1])*x[1]*(1.0-x[2])*x[2]*t
+θ = 0.5
+
+u(x,t) = VectorValue(x[1],x[2])*t
 u(t::Real) = x -> u(x,t)
-f(t) = x -> ∂t(u)(x,t)-Δ(u(t))(x)
 
-L= 1.0
-n = 2
-domain = (0,L,0,L)
-partition = (n,n)
+p(x,t) = (x[1]-x[2])*t
+p(t::Real) = x -> p(x,t)
+q(x) = t -> p(x,t)
+
+f(t) = x -> ∂t(u)(t)(x)-Δ(u(t))(x)+ ∇(p(t))(x)
+g(t) = x -> (∇⋅u(t))(x)
+
+domain = (0,1,0,1)
+partition = (2,2)
 model = CartesianDiscreteModel(domain,partition)
 
 order = 2
 
-reffe = ReferenceFE(lagrangian,Float64,order)
+reffeᵤ = ReferenceFE(lagrangian,VectorValue{2,Float64},order)
 V0 = FESpace(
   model,
-  reffe,
-  conformity=:L2
+  reffeᵤ,
+  conformity=:H1,
+  dirichlet_tags="boundary"
 )
-U = TransientTrialFESpace(V0)
+
+reffeₚ = ReferenceFE(lagrangian,Float64,order-1)
+Q = TestFESpace(
+  model,
+  reffeₚ,
+  conformity=:H1,
+  constraint=:zeromean
+)
+
+U = TransientTrialFESpace(V0,u)
+
+P = TrialFESpace(Q)
 
 Ω = Triangulation(model)
 degree = 2*order
@@ -40,48 +60,74 @@ nb = get_normal_vector(Γ)
 
 Λ = SkeletonTriangulation(model)
 dΛ = Measure(Λ,degree)
-n_Γg = get_normal_vector(Λ)
+n_Λ = get_normal_vector(Λ)
 
-a(u,v) = ∫(∇(v)⋅∇(u))dΩ
-b(v,t) = ∫(v*f(t))dΩ
-m(u,v) = ∫(v*u)dΩ
+typeof(n_Λ)
 
-h = 1.0 / n
-γ = order*(order+1)
-a_Γ(u,v) = ∫( (γ/h)*v*u - v*(∇(u)⋅nb) - (∇(v)⋅nb)*u )dΓ
-b_Γ(v,t) = ∫( (γ/h)*v*u(t) - (∇(v)⋅nb)*u(t) )dΓ
+#
+a(u,v) = ∫(∇(u)⊙∇(v))dΩ
+b((v,q),t) = ∫(v⋅f(t))dΩ + ∫(q*g(t))dΩ
+m(ut,v) = ∫(ut⋅v)dΩ
 
-a_Λ(u,v) = ∫(    abs( u.⁺)* jump(n_Γg⋅∇(u))⋅jump(n_Γg⋅∇(v)) )dΛ
+X = TransientMultiFieldFESpace([U,P])
+Y = MultiFieldFESpace([V0,Q])
 
-res(t,u,ut,v) = a(u,v) + m(ut,v) + a_Γ(u,v) + a_Λ(u,v) - b(v,t) - b_Γ(v,t) + a_Λ(u,v) 
-jac(t,u,ut,du,v) = a(du,v) + a_Γ(du,v) + a_Λ(du,v)
-jac_t(t,u,ut,dut,v) = m(dut,v)
+res(t,(u,p),(ut,pt),(v,q)) = ∫( abs(u⋅u) *   (∇(u)⊙∇(v))   )dΩ + 
+ m(ut,v) - 
+ ∫((∇⋅v)*p)dΩ + ∫(q*(∇⋅u))dΩ - b((v,q),t) + 
+ ∫(    abs(u ⋅ nb )*  u⋅v            )dΓ + 
+∫(
+  abs(u.⁺ ⋅ n_Λ.⁺ )* 
+  jump(v⊗n_Λ)⊙jump(u⊗n_Λ) -
+    jump(v⊗n_Λ)⊙mean(∇(u)) - 
+    mean(∇(v))⊙jump(u⊗n_Λ)  +
+   jump(q*n_Λ)⋅jump(p*n_Λ) +
+    jump(q*n_Λ)⋅mean(u) -
+    mean(v)⋅jump(p*n_Λ)
+)*dΛ
 
-op = TransientFEOperator(res,jac,jac_t,U,V0)
+jac(t,(u,p),(ut,pt),(du,dp),(v,q)) = a(du,v) - ∫((∇⋅v)*dp)dΩ + ∫(q*(∇⋅du))dΩ
+jac_t(t,(u,p),(ut,pt),(dut,dpt),(v,q)) = m(dut,v)
+
+b((v,q)) = b((v,q),0.0)
+
+mat((du1,du2),(v1,v2)) = a(du1,v1)+a(du2,v2)
+
+U0 = U(0.0)
+P0 = P(0.0)
+X0 = X(0.0)
+uh0 = interpolate_everywhere(u(0.0),U0)
+ph0 = interpolate_everywhere(p(0.0),P0)
+xh0 = interpolate_everywhere([uh0,ph0],X0)
+
+op = TransientFEOperator(res,jac,jac_t,X,Y)
 
 t0 = 0.0
 tF = 1.0
 dt = 0.1
 
-U0 = U(0.0)
-uh0 = interpolate_everywhere(u(0.0),U0)
-
 ls = LUSolver()
-using Gridap.Algebra: NewtonRaphsonSolver
 odes = ThetaMethod(ls,dt,θ)
 solver = TransientFESolver(odes)
 
-sol_t = solve(solver,op,uh0,t0,tF)
+sol_t = solve(solver,op,xh0,t0,tF)
 
-l2(w) = w*w
+l2(w) = w⋅w
+
 
 tol = 1.0e-6
 _t_n = t0
 
-for (uh_tn, tn) in sol_t
+result = Base.iterate(sol_t)
+
+for (xh_tn, tn) in sol_t
   global _t_n
   _t_n += dt
+  uh_tn = xh_tn[1]
+  ph_tn = xh_tn[2]
   e = u(tn) - uh_tn
+  el2 = sqrt(sum( ∫(l2(e))dΩ ))
+  e = p(tn) - ph_tn
   el2 = sqrt(sum( ∫(l2(e))dΩ ))
   @test el2 < tol
 end
