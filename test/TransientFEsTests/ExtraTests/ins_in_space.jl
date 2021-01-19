@@ -12,6 +12,7 @@ import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
 using LineSearches: BackTracking
 using Gridap.Algebra: NewtonRaphsonSolver
+using Gridap.CellData
 
 #@law 
 conv(u, ∇u) = (∇u') ⋅ u
@@ -19,12 +20,12 @@ conv(u, ∇u) = (∇u') ⋅ u
 dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ conv(du, ∇u) #Changing to using the linear solver
 
 # Physical constants
-u_max = 1.50 # 150 #150# 150#  150 #cm/s
+u_max = 150 # 150 #150# 150#  150 #cm/s
 L = 1 #cm
 ρ =  1.06e-3 #kg/cm^3 
 μ =  3.50e-5 #kg/cm.s
 ν = μ/ρ 
-Δt =  0.046 /  (u_max/2) # / (u_max) #/ 1000 # 0.046  #s \\
+Δt =  0.046 / (u_max/2) # / (u_max) #/ 1000 # 0.046  #s \\
 
 n=10
 h=L/n
@@ -111,7 +112,9 @@ dΩ = Measure(Ω,degree)
 
 Γ = BoundaryTriangulation(model)
 dΓ = Measure(Γ,degree)
-nb = get_normal_vector(Γ)
+n_Γ = get_normal_vector(Γ)
+
+
 
 reffeᵤ = ReferenceFE(lagrangian,VectorValue{D,Float64},order)
 
@@ -120,7 +123,7 @@ V0 = FESpace(
   model,
   reffeᵤ,
   conformity=:H1,
-  dirichlet_tags="boundary"
+  #dirichlet_tags="boundary"
   )
 
 reffeₚ = ReferenceFE(lagrangian,Float64,order-1)
@@ -131,16 +134,15 @@ Q = TestFESpace(
   conformity=:H1,
   constraint=:zeromean)
 
-U = TransientTrialFESpace(V0,u)
+U = TrialFESpace(V0)
 P = TrialFESpace(Q)
 
-X = TransientMultiFieldFESpace([U,P])
+X = MultiFieldFESpace([U,P])
 Y = MultiFieldFESpace([V0,Q])
 
 #NITSCHE
-α_γ = 35
-#@law 
-γ(u) =  α_γ * ( μ / h  +  ρ * maximum(u) / 6 ) # Nitsche Penalty parameter ( γ / h ) 
+α_γ = 100
+γ(u) =  α_γ * ( ν / h  )#+  ρ * normInf(u) / 6 ) # Nitsche Penalty parameter ( γ / h ) 
 
 @show VD = ν / h
 @show CD = ρ * u_max / 6 
@@ -199,9 +201,9 @@ res(t,(u,p),(ut,pt),(v,q)) =
 
 ∫( ( m_Ω(ut,v) + a_Ω(u,v) + b_Ω(v,p) + b_Ω(u,q) - v⋅f(t) + q*g(t) + c_Ω(u,v)  # + ρ * 0.5 * (∇⋅u) * u ⊙ v  
 +0*(- sp_Ω(u,p,q)  -  st_Ω(u,ut,q)   + ϕ_Ω(u,q,t)     - sc_Ω(u,u,q) )
-+0*(- sp_sΩ(u,p,v) - st_sΩ(u,ut,v)  + ϕ_sΩ(u,v,t)    - sc_sΩ(u,u,v) )))dΩ #+
++0*(- sp_sΩ(u,p,v) - st_sΩ(u,ut,v)  + ϕ_sΩ(u,v,t)    - sc_sΩ(u,u,v) )))dΩ +
 
-#∫( a_Γ(u,v)+b_Γ(u,q)+b_Γ(v,p) - ud(t) ⊙(  ( γ(u)/h )*v - μ * n_Γ⋅∇(v) + q*n_Γ )  )dΓ +
+∫( a_Γ(u,v)+b_Γ(u,q)+b_Γ(v,p) - ud(t) ⊙(  ( γ(u)/h )*v - μ * n_Γ⋅∇(v) + q*n_Γ )  )dΓ #+
 
 #∫(μ * - v⋅(n_Γn⋅∇(u_Γn(t))) + (n_Γn⋅v)*p_Γn(t) )dΓn + 
 
@@ -212,9 +214,9 @@ jac(t,(u,p),(ut,pt),(du,dp),(v,q)) =
 
 ∫( ( a_Ω(du,v) + b_Ω(v,dp) + b_Ω(du,q)  + dc_Ω(u, du, v) # + ρ * 0.5 * (∇⋅u) * du ⊙ v 
 +0* ( - sp_Ω(u,dp,q)  - dsc_Ω(u,u,du,q) )
-+0*(- sp_sΩ(u,dp,v) - dsc_sΩ(u,u,du,v) ) ))dΩ #+ 
++0*(- sp_sΩ(u,dp,v) - dsc_sΩ(u,u,du,v) ) ))dΩ + 
 
-#∫( a_Γ(du,v)+b_Γ(du,q)+b_Γ(v,dp)  )dΓ +
+∫( a_Γ(du,v)+b_Γ(du,q)+b_Γ(v,dp)  )dΓ #+
 
 #∫( i_Γg(u,du,v) - j_Γg(u,dp,q) )dΓg 
 
