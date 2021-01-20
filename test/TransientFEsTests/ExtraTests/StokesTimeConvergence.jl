@@ -12,131 +12,170 @@ using Gridap.FESpaces: get_algebraic_operator
 import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
 
-θ = 0.5
+# Physical constants
+u_max = 10 #150 # 150 #150# 150#  150 #cm/s
+L = 1 #cm
+ρ =  1 # 1.06e-3 #kg/cm^3 
+μ =  1# 3.50e-5 #kg/cm.s
+ν = μ/ρ 
+Δt =  0.001/u_max  #0.046 * 0.1  # / (u_max) #/ 1000 # 0.046  #s \\
 
+n=20
+h=L/n
+
+@show  Re = ρ*u_max*L/μ
+@show C_t = u_max*Δt/h
+
+# Manufactured solutions
+θ = 1 
 k=2*pi
-u(x,t) = VectorValue(x[1],x[2])*cos(k*t)
-u(t::Real) = x -> u(x,t)
 
-p(x,t) = (x[1]-x[2])*cos(k*t)
+u(x,t) = (u_max) * VectorValue( x[2] , - x[1] ) * sin( k * (t/Δt) )
+u(t::Real) = x -> u(x,t)
+ud(t) = x -> u(t)(x)
+
+p(x,t) = u_max * (x[1]-x[2]) * cos(k* (t/Δt) )
 p(t::Real) = x -> p(x,t)
 q(x) = t -> p(x,t)
 
-f(t) = x -> ∂t(u)(t)(x)-Δ(u(t))(x)+ ∇(p(t))(x)
+f(t) = x -> ρ * ∂t(u)(t)(x)  - μ * Δ(u(t))(x) + ∇(p(t))(x) #+ ρ * conv(u(t)(x),∇(u(t))(x))
 g(t) = x -> (∇⋅u(t))(x)
 
-function run_test(dt)
+function run_test(nt)
 
-n=16
+#Δt = 1
+n=20
+t0 = 0.0
+#tF = Δt
+#dt = Δt/n_t
+  
+order = 1
 
-  domain = (0,1,0,1)
-  partition = (n,n)
-  model = CartesianDiscreteModel(domain,partition)
-  h=0.5
+# Select geometry
+L=1
+n = n
+h=L/n
+partition = (n,n)
+D=length(partition)
+# Setup background model
+domain = (0,L,0,L)
+bgmodel = simplexify(CartesianDiscreteModel(domain,partition))
+#const h = L/n
 
-  order = 2
+#Non-embedded geometry 
+model=bgmodel
 
-  V0 = FESpace(
-    reffe=:Lagrangian, order=order, valuetype=VectorValue{2,Float64},
-    conformity=:H1, model=model, dirichlet_tags="boundary")
+Ω = Triangulation(model)
+degree = 2*order
+dΩ = Measure(Ω,degree)
 
-  Q = TestFESpace(
-    model=model,
-    order=order-1,
-    reffe=:Lagrangian,
-    valuetype=Float64,
-    conformity=:H1,
-    constraint=:zeromean)
+Γ = BoundaryTriangulation(model)
+dΓ = Measure(Γ,degree)
+n_Γ = get_normal_vector(Γ)
 
-  U = TransientTrialFESpace(V0,u)
+reffeᵤ = ReferenceFE(lagrangian,VectorValue{D,Float64},order)
 
-  P = TrialFESpace(Q)
+order = 2
 
-  trian = Triangulation(model)
-  degree = 2*order
-  quad = CellQuadrature(trian,degree)
+reffeᵤ = ReferenceFE(lagrangian,VectorValue{2,Float64},order)
 
-  #
-  a(u,v) = inner(∇(u),∇(v))
-  b(v,t) = inner(v,f(t))
+V0 = FESpace(
+  model,
+  reffeᵤ,
+  conformity=:H1,
+  dirichlet_tags="boundary"
+)
 
-  X = TransientMultiFieldFESpace([U,P])
-  Y = MultiFieldFESpace([V0,Q])
+reffeₚ = ReferenceFE(lagrangian,Float64,order-1)
 
-  function res(t,x,xt,y)
-    u,p = x
-    ut,pt = xt
-    v,q = y
-    a(u,v) + inner(ut,v) - (∇⋅v)*p + q*(∇⋅u) - inner(v,f(t)) - q*g(t)
-  end
+Q = TestFESpace(
+  model,
+  reffeₚ,
+  conformity=:H1,
+  constraint=:zeromean
+)
 
-  function jac(t,x,xt,dx,y)
-    du,dp = dx
-    v,q = y
-    a(du,v)- (∇⋅v)*dp + q*(∇⋅du)
-  end
+U = TransientTrialFESpace(V0,u)
 
-  function jac_t(t,x,xt,dxt,y)
-    dut,dpt = dxt
-    v,q = y
-    inner(dut,v)
-  end
+P = TrialFESpace(Q)
 
-  function b(y)
-    v,q = y
-    0.0
-    v⋅f(0.0) + q*g(0.0)
-  end
+Ω = Triangulation(model)
+degree = 2*order
+dΩ = Measure(Ω,degree)
 
-  function mat(dx,y)
-    du1,du2 = dx
-    v1,v2 = y
-    a(du1,v1)+a(du2,v2)
-  end
+Γ = BoundaryTriangulation(model)
+dΓ = Measure(Γ,degree)
+nb = get_normal_vector(Γ)
 
-  X0 = X(0.0)
-  xh0 = interpolate_everywhere([u(0.0),p(0.0)],X0)
+a(u,v) = ∫(μ*∇(u)⊙∇(v))dΩ
+b((v,q),t) = ∫(v⋅f(t))dΩ + ∫(q*g(t))dΩ
+m(ut,v) = ∫(ρ*(ut⋅v))dΩ
 
-  t_Ω = FETerm(res,jac,jac_t,trian,quad)
-  op = TransientFEOperator(X,Y,t_Ω)
+X = TransientMultiFieldFESpace([U,P])
+Y = MultiFieldFESpace([V0,Q])
 
-  t0 = 0.0
-  tF = 1.0
-  dt = dt
+res(t,(u,p),(ut,pt),(v,q)) = 
+  a(u,v)  +
+  m(ut,v) - 
+  ∫((∇⋅v)*p)dΩ +
+  ∫(q*(∇⋅u))dΩ - 
+  b((v,q),t) 
 
-  ls = LUSolver()
-  odes = ThetaMethod(ls,dt,θ)
-  solver = TransientFESolver(odes)
+jac(t,(u,p),(ut,pt),(du,dp),(v,q)) = a(du,v) - ∫((∇⋅v)*dp)dΩ + ∫(q*(∇⋅du))dΩ
+jac_t(t,(u,p),(ut,pt),(dut,dpt),(v,q)) = m(dut,v)
 
-  sol_t = solve(solver,op,xh0,t0,tF)
+b((v,q)) = b((v,q),0.0)
 
-  l2(w) = w⋅w
+mat((du1,du2),(v1,v2)) = a(du1,v1)+a(du2,v2)
 
-  tol = 1.0e-6
-  _t_n = t0
+U0 = U(0.0)
+P0 = P(0.0)
+X0 = X(0.0)
+uh0 = interpolate_everywhere(u(0.0),U0)
+ph0 = interpolate_everywhere(p(0.0),P0)
+xh0 = interpolate_everywhere([uh0,ph0],X0)
 
-  result = Base.iterate(sol_t)
+op = TransientFEOperator(res,jac,jac_t,X,Y)
+
+t0 = 0.0
+tF = Δt #1.0
+dt = Δt/nt
+
+ls = LUSolver()
+odes = ThetaMethod(ls,dt,θ)
+solver = TransientFESolver(odes)
+
+sol_t = solve(solver,op,xh0,t0,tF)
+
 l2(w) = w⋅w
 
 tol = 1.0e-6
 _t_n = t0
 
-us = []
+result = Base.iterate(sol_t)
+
 eul2 = []
 epl2 = []
 
+
 for (xh_tn, tn) in sol_t
-  #global _t_n += dt
   _t_n += dt
   uh_tn = xh_tn[1]
   ph_tn = xh_tn[2]
-  e = u(tn) - uh_tn
-  eul2i = sqrt(sum( integrate(l2(e),trian,quad) ))
-  e = p(tn) - ph_tn
-  epl2i = sqrt(sum( integrate(l2(e),trian,quad) ))
-  #@test epl2i<tol
+  e_u = u(tn) - uh_tn
+  e_p = p(tn) - ph_tn
+  u_ex = u(tn) - 0*uh_tn
+  p_ex = p(tn) - 0*ph_tn
+  #@show eul20 = sqrt(sum( ∫(l2(uh0-u(0)))dΩ ))
+  #@show epl20 = sqrt(sum( ∫(l2(ph0-p(0)))dΩ ))
+  @show eul2i = sqrt(sum( ∫(l2(e_u))dΩ ))
+  @show epl2i = sqrt(sum( ∫(l2(e_p))dΩ ))
+  if nt == 8
+  writevtk(Ω,"results_t_stokes_$(_t_n)",cellfields=["e_u"=>e_u,"uh_Ω"=>uh_tn,"u_ex"=>u_ex,"e_p"=>e_p,"ph_Ω"=>ph_tn,"p_ex"=>p_ex])
+  end
   push!(eul2,eul2i)
   push!(epl2,epl2i)
+  @show tn
 end
 
 eul2=last(eul2)
@@ -146,16 +185,14 @@ epl2=last(epl2)
 
 end
 
-function conv_test(dts)
+function conv_test(nts)
 
   eul2s = Float64[]
   epl2s = Float64[]
   hs = Float64[]
 
-  for dt in dts
-
-    eul2, epl2, h = run_test(dt)
-
+  for nt in nts
+    eul2, epl2, h = run_test(nt)
     push!(eul2s,eul2)
     push!(epl2s,epl2)
     push!(hs,h)
@@ -168,12 +205,12 @@ end
 
 ID = 7
 
-dts = [0.05,0.02,0.01]
+nts = [8,16,32]
 
 global ID = ID+1
-eul2s, epl2s, hs = conv_test(dts);
+eul2s, epl2s, hs = conv_test(nts);
 using Plots
-plot(dts,[eul2s, epl2s],
+plot(nts,[eul2s, epl2s],
     xaxis=:log, yaxis=:log,
     label=["L2U" "L2P"],
     shape=:auto,
@@ -188,7 +225,7 @@ function slope(dts,errors)
   linreg[2]
 end
 
-@show slope(dts,eul2s)
-@show slope(dts,epl2s)
+@show slope(nts,eul2s)
+@show slope(nts,epl2s)
 
 end #module
