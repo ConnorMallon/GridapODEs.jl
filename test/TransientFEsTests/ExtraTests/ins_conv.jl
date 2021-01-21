@@ -17,6 +17,8 @@ import GridapODEs.TransientFETools: ∂t
 using LineSearches: BackTracking
 using Gridap.Algebra: NewtonRaphsonSolver
 
+using Gridap.CellData
+
 conv(u, ∇u) = (∇u') ⋅ u
 dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ conv(du, ∇u)
 
@@ -26,7 +28,7 @@ const L = 1 #cm
 const ρ =  1.06e-3 #kg/cm^3 
 const μ =  3.50e-5 #kg/cm.s
 const ν = μ/ρ 
-const Δt =  0.046 / 1000 # (u_max) # / (u_max) #/ 1000 # 0.046  #s \\
+const Δt =  0.046   / 100 # (u_max) # / (u_max) #/ 1000 # 0.046  #s \\
 
 const n_t= 1 # 10
 const t0 = 0.0
@@ -158,7 +160,7 @@ Y = MultiFieldFESpace([V0,Q])
 #STABILISATION
 α_τ = 0.1 #Tunable coefficiant (0,1)
 #@law 
-τ_SUPG(u) = α_τ * inv(sqrt( (2/ Δt )^2 + ( 2 * maximum(u) / h )*( 2 * maximum(u) / h ) + 9 * ( 4*ν / h^2 )^2 )) # SUPG Stabilisation - convection stab ( τ_SUPG(u )
+τ_SUPG(u) = α_τ * inv(sqrt( (2/ Δt )^2 + ( 2 * normInf(u) / h )*( 2 * normInf(u) / h ) + 9 * ( 4*ν / h^2 )^2 )) # SUPG Stabilisation - convection stab ( τ_SUPG(u )
 #@law 
 τ_PSPG(u) = τ_SUPG(u) # PSPG stabilisation - inf-sup stab  ( ρ^-1 * τ_PSPG(u) )
 
@@ -236,13 +238,16 @@ xh0 = interpolate_everywhere(X0,[u(0.0),p(0.0)])
 
 ls = LUSolver()
 
-#nls = NewtonRaphsonSolver(ls,1e-10,40)
+nls = NewtonRaphsonSolver(ls,1e10,2)
 
+# #=
 nls = NLSolver(
     show_trace = true,
     method = :newton,
     linesearch = BackTracking(),
+    ftol = 1e-2
 )
+# =#
 
 op = TransientFEOperator(res,jac,jac_t,X,Y)
 
@@ -267,12 +272,13 @@ for (xh_tn, tn) in sol_t
   _t_n += dt
   uh_tn = xh_tn[1]
   ph_tn = xh_tn[2]
-  e = u(tn) - uh_tn
+  e_u = u(tn) - uh_tn
+  e_p = p(tn) - ph_tn
   u_ex = u(tn) - 0*uh_tn
-  writevtk(Ω,"results1_$(n)",cellfields=["e"=>e,"uh_Ω"=>uh_tn,"u_ex"=>u_ex,"ph_tn"=>ph_tn])
-  @show eul2i = sqrt(sum( ∫(l2(e))dΩ ))
-  e = p(tn) - ph_tn
-  epl2i = sqrt(sum( ∫(l2(e))dΩ ))
+  p_ex = p(tn) - 0*ph_tn
+  @show eul2i = sqrt(sum( ∫(l2(e_u))dΩ ))
+  @show epl2i = sqrt(sum( ∫(l2(e_p))dΩ ))
+  writevtk(Ω,"results_x",cellfields=["e_u"=>e_u,"uh_Ω"=>uh_tn,"u_ex"=>u_ex,"e_p"=>e_p,"ph_Ω"=>ph_tn,"p_ex"=>p_ex])
   push!(eul2,eul2i)
   push!(epl2,epl2i)
   @show tn
