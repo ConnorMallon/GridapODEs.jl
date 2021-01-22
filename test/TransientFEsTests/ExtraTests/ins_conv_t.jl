@@ -28,7 +28,7 @@ L = 1 #cm
 ρ =  1.06e-3 #kg/cm^3 
 μ =  3.50e-5 #kg/cm.s
 ν = μ/ρ 
-Δt =  0.046  / 100   # / (u_max) #/ 1000 # 0.046  #s \\
+Δt =  0.046  / 1000   # / (u_max) #/ 1000 # 0.046  #s \\
 
 n=20
 h=L/n
@@ -168,7 +168,7 @@ nls = NLSolver(
     show_trace = true,
     method = :newton,
     linesearch = BackTracking(),
-    ftol = 1e-2
+    #ftol = 1e-2
 )
 
 op = TransientFEOperator(res,jac,jac_t,X,Y)
