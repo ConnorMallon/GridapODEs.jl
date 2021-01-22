@@ -28,7 +28,7 @@ const L = 1 #cm
 const ρ =  1.06e-3 #kg/cm^3 
 const μ =  3.50e-5 #kg/cm.s
 const ν = μ/ρ 
-const Δt =  0.046   / 100 # (u_max) # / (u_max) #/ 1000 # 0.046  #s \\
+const Δt =  0.046 / 1000   #/ 100 # (u_max) # / (u_max) #/ 1000 # 0.046  #s \\
 
 const n_t= 1 # 10
 const t0 = 0.0
@@ -64,10 +64,8 @@ D=length(partition)
 
 h=L/n
 
-
 @show  Re = ρ*u_max*L/μ
 @show C_t = u_max*Δt/h
-
 
 # Setup background model
 domain = (0,L,0,L)
@@ -112,7 +110,6 @@ dΓn = Measure(Γn,degree)
 dΓg = Measure(Γg,degree)
 =#
 
-
 #Non-embedded geometry 
 model=bgmodel
 
@@ -131,7 +128,7 @@ V0 = FESpace(
   model,
   reffeᵤ,
   conformity=:H1,
-  #dirichlet_tags="boundary"
+  dirichlet_tags="boundary"
   )
 
 reffeₚ = ReferenceFE(lagrangian,Float64,order)
@@ -142,37 +139,28 @@ Q = TestFESpace(
   conformity=:H1,
   constraint=:zeromean)
 
-U = TrialFESpace(V0)
+U = TransientTrialFESpace(V0,u)
 P = TrialFESpace(Q)
 
-X = MultiFieldFESpace([U,P])
+X = TransientMultiFieldFESpace([U,P])
 Y = MultiFieldFESpace([V0,Q])
 
 #NITSCHE
-α_γ = 100
-#@law 
-γ(u) =  α_γ * ( μ / h  )# +  ρ * maximum(u) / 6 ) # Nitsche Penalty parameter ( γ / h ) 
+α_γ = 1000000000000
+γ(u) =  α_γ * ( μ / h  + h*ρ/(12*θ*dt) )#+   ρ * normInf(u) / 6  ) # Nitsche Penalty parameter ( γ / h ) 
 
 @show VD = ν / h
 @show CD = ρ * u_max / 6 
 @show TD = h*ρ / (12*θ*Δt)
 
 #STABILISATION
-α_τ = 0.1 #Tunable coefficiant (0,1)
+α_τ = 1 #Tunable coefficiant (0,1)
 #@law 
 τ_SUPG(u) = α_τ * inv(sqrt( (2/ Δt )^2 + ( 2 * normInf(u) / h )*( 2 * normInf(u) / h ) + 9 * ( 4*ν / h^2 )^2 )) # SUPG Stabilisation - convection stab ( τ_SUPG(u )
+#τ_SUPG(u) = α_τ * inv(sqrt( (2/ Δt )^2 + ( 2 * sqrt(u⋅u) / h )*( 2 * sqrt(u⋅u)/ h ) + 9 * ( 4*ν / h^2 )^2 )) # SUPG Stabilisation - convection stab ( τ_SUPG(u )
+
 #@law 
 τ_PSPG(u) = τ_SUPG(u) # PSPG stabilisation - inf-sup stab  ( ρ^-1 * τ_PSPG(u) )
-
-# Ghost Penalty parameters  
-α_B = 0.01 
-α_u = 0.01 
-α_p = 0.01 
-
-#NS Paper ( DOI 10.1007/s00211-007-0070-5)
-γ_B3(u)   = α_B * h^2  * abs(u.⁺ ⋅ n_Γg.⁺ )    #conv
-γ_u3      = α_u * h^2  #visc diffusion 
-γ_p3      = α_p * h^2  #pressure
 
 ## Weak form terms
 #Interior terms
@@ -208,9 +196,9 @@ res(t,(u,p),(ut,pt),(v,q)) =
 
 ∫( ( m_Ω(ut,v) + a_Ω(u,v) + b_Ω(v,p) + b_Ω(u,q) - v⋅f(t) + q*g(t) + c_Ω(u,v)  # + ρ * 0.5 * (∇⋅u) * u ⊙ v  
 +1*(- sp_Ω(u,p,q)  -  st_Ω(u,ut,q)   + ϕ_Ω(u,q,t)     - sc_Ω(u,u,q) )
-+1*(- sp_sΩ(u,p,v) - st_sΩ(u,ut,v)  + ϕ_sΩ(u,v,t)    - sc_sΩ(u,u,v) )))dΩ +
++1*(- sp_sΩ(u,p,v) - st_sΩ(u,ut,v)  + ϕ_sΩ(u,v,t)    - sc_sΩ(u,u,v) )))dΩ #+
 
-∫( a_Γ(u,v)+b_Γ(u,q)+b_Γ(v,p) - ud(t) ⊙(  ( γ(u)/h )*v - μ * n_Γ⋅∇(v) + q*n_Γ )  )dΓ #+
+#∫( a_Γ(u,v)+b_Γ(u,q)+b_Γ(v,p) - ud(t) ⊙(  ( γ(u)/h )*v - μ * n_Γ⋅∇(v) + q*n_Γ )  )dΓ #+
 
 #∫(μ * - v⋅(n_Γn⋅∇(u_Γn(t))) + (n_Γn⋅v)*p_Γn(t) )dΓn + 
 
@@ -221,9 +209,9 @@ jac(t,(u,p),(ut,pt),(du,dp),(v,q)) =
 
 ∫( ( a_Ω(du,v) + b_Ω(v,dp) + b_Ω(du,q)  + dc_Ω(u, du, v) # + ρ * 0.5 * (∇⋅u) * du ⊙ v 
 +1* ( - sp_Ω(u,dp,q)  - dsc_Ω(u,u,du,q) )
-+1*(- sp_sΩ(u,dp,v) - dsc_sΩ(u,u,du,v) ) ))dΩ + 
++1* (- sp_sΩ(u,dp,v) - dsc_sΩ(u,u,du,v) ) ))dΩ #+ 
 
-∫( a_Γ(du,v)+b_Γ(du,q)+b_Γ(v,dp)  )dΓ #+
+#∫( a_Γ(du,v)+b_Γ(du,q)+b_Γ(v,dp)  )dΓ #+
 
 #∫( i_Γg(u,du,v) - j_Γg(u,dp,q) )dΓg 
 
@@ -238,14 +226,14 @@ xh0 = interpolate_everywhere(X0,[u(0.0),p(0.0)])
 
 ls = LUSolver()
 
-nls = NewtonRaphsonSolver(ls,1e10,2)
+#nls = NewtonRaphsonSolver(ls,1e10,2)
 
 # #=
 nls = NLSolver(
     show_trace = true,
     method = :newton,
     linesearch = BackTracking(),
-    ftol = 1e-2
+    # ftol = 1e-4
 )
 # =#
 
@@ -276,9 +264,10 @@ for (xh_tn, tn) in sol_t
   e_p = p(tn) - ph_tn
   u_ex = u(tn) - 0*uh_tn
   p_ex = p(tn) - 0*ph_tn
+  norminfu = normInf(uh_tn)
   @show eul2i = sqrt(sum( ∫(l2(e_u))dΩ ))
   @show epl2i = sqrt(sum( ∫(l2(e_p))dΩ ))
-  writevtk(Ω,"results_x",cellfields=["e_u"=>e_u,"uh_Ω"=>uh_tn,"u_ex"=>u_ex,"e_p"=>e_p,"ph_Ω"=>ph_tn,"p_ex"=>p_ex])
+  writevtk(Ω,"results_x",cellfields=["e_u"=>e_u,"uh_Ω"=>uh_tn,"u_ex"=>u_ex,"e_p"=>e_p,"ph_Ω"=>ph_tn,"p_ex"=>p_ex,"norinfu"=>norminfu])
   push!(eul2,eul2i)
   push!(epl2,epl2i)
   @show tn
@@ -315,7 +304,7 @@ function conv_test(ns)
 end
 
 const ID = 1
-const ns = [32,48,64]
+const ns = [20,40,60]
 
 global ID = ID+1
 
