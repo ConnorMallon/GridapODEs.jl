@@ -86,15 +86,15 @@ fAD_mw(t,w) = (n_Γn⋅∇(c(t)))*w  + ( c(t)*w-m(t)*w )
 fAD_mg(t,g) = fAD_m(t)*g
 
 
-res(t,(c,m),(ct,mt),(w,g)) =  
+res(t,((c,m),(ct,mt)),(w,g)) =  
 ∫(  m_ΩAD(ct,w) + a_ΩAD(c,w) + c_ΩAD(β(t) , c , w )       - fAD_cw(t,w) )dΩ + 
 ∫(  (f_coupling(c,m))*w  - fAD_mw(t,w)     +      m_ΓAD(mt,g) - f_coupling(c,m)⋅g - fAD_mg(t,g)         )dΓn
 
-jac(t,(c,m),(ct,mt),(dc,dm),(w,g))  = 
+jac(t,((c,m),(ct,mt)),(dc,dm),(w,g))  = 
 ∫( ( a_ΩAD(dc,w) + c_ΩAD(β(t) , dc , w ) ))dΩ + 
 ∫( f_coupling(dc,dm)*w     -            f_coupling(dc,dm)*g   )dΓn
 
-jac_t(t,(c,m),(ct,mt),(dct,dmt),(w,g)) = 
+jac_t(t,((c,m),(ct,mt)),(dct,dmt),(w,g)) = 
 ∫(  m_ΩAD(dct,w) )dΩ + 
 ∫(  m_ΓAD(dmt,g)   )dΓn
 
