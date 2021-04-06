@@ -72,22 +72,9 @@ m(ut,v) = ∫(ut⋅v)dΩ
 X = TransientMultiFieldFESpace([U,P])
 Y = MultiFieldFESpace([V0,Q])
 
-res(t,(u,p),(ut,pt),(v,q)) = ∫( abs(u⋅u) *   (∇(u)⊙∇(v))   )dΩ + 
- m(ut,v) - 
- ∫((∇⋅v)*p)dΩ + ∫(q*(∇⋅u))dΩ - b((v,q),t) + 
- ∫(    abs(u ⋅ nb )*  u⋅v            )dΓ + 
-∫(
-  abs(u.⁺ ⋅ n_Λ.⁺ )* 
-  jump(v⊗n_Λ)⊙jump(u⊗n_Λ) -
-    jump(v⊗n_Λ)⊙mean(∇(u)) - 
-    mean(∇(v))⊙jump(u⊗n_Λ)  +
-   jump(q*n_Λ)⋅jump(p*n_Λ) +
-    jump(q*n_Λ)⋅mean(u) -
-    mean(v)⋅jump(p*n_Λ)
-)*dΛ
-
-jac(t,(u,p),(ut,pt),(du,dp),(v,q)) = a(du,v) - ∫((∇⋅v)*dp)dΩ + ∫(q*(∇⋅du))dΩ
-jac_t(t,(u,p),(ut,pt),(dut,dpt),(v,q)) = m(dut,v)
+res(t,((u,p),(ut,pt)),(v,q)) = a(u,v) + m(ut,v) - ∫((∇⋅v)*p)dΩ + ∫(q*(∇⋅u))dΩ - b((v,q),t)
+jac(t,((u,p),(ut,pt)),(du,dp),(v,q)) = a(du,v) - ∫((∇⋅v)*dp)dΩ + ∫(q*(∇⋅du))dΩ
+jac_t(t,((u,p),(ut,pt)),(dut,dpt),(v,q)) = m(dut,v)
 
 b((v,q)) = b((v,q),0.0)
 
