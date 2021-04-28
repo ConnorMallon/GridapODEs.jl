@@ -8,6 +8,15 @@ using GridapODEs.TransientFETools
 using Gridap.FESpaces: get_algebraic_operator
 import Gridap: ∇
 import GridapODEs.TransientFETools: ∂t
+using Gridap.Algebra: NewtonRaphsonSolver
+
+# Physical constants
+u_max = 1#  150 # 150 #150# 150#  150 #cm/s
+L = 1 #cm
+ρ =  1#1.06e-3 #kg/cm^3 
+μ =  1#3.50e-5 #kg/cm.s
+ν = μ/ρ 
+Δt =  1 #0.046 / (u_max/2) # / (u_max) #/ 1000 # 0.046  #s \\
 
 conv(u, ∇u) = (∇u') ⋅ u
 dconv(du, ∇du, u, ∇u) = conv(u, ∇du) #+ conv(du, ∇u) #Changing to using the linear solver
@@ -34,6 +43,7 @@ fAD_m(t) = x -> ∂t(m)(x,t) - (c(t)(x) - m(t)(x))
 #model
 L=1
 n=2
+h=L/n
 domain = (0,L,0,L)
 partition = (n,n)
 order = 1
@@ -101,6 +111,16 @@ XAD = TransientMultiFieldFESpace([C,M])
 YAD = MultiFieldFESpace([W0,G0])
 xADh0 = interpolate_everywhere([c(0.0),m(0.0)],XAD(0.0))
 
+
+#STABILISATION
+α_τ = 1 #Tunable coefficiant (0,1)
+#@law 
+#τ_SUPG(u) = α_τ * inv(sqrt( (2/ Δt )^2 + ( 4 * maximum(u) / h )*( 2 * maximum(u) / h ) + 9 * ( 4*ν / h^2 )^2 )) # SUPG Stabilisation - convection stab ( τ_SUPG(u )
+τ_SUPG(u) = α_τ * inv(sqrt( (2/ Δt )^2 + ( 4 * u⋅u / h )*( 2  / h ) + 9 * ( 4*ν / h^2 )^2 )) # SUPG Stabilisation - convection stab ( τ_SUPG(u )
+ 
+τ_PSPG(u) = τ_SUPG(u) # PSPG stabilisation - inf-sup stab  ( ρ^-1 * τ_PSPG(u) )
+
+
 #Interior terms
 m_ΩINS(ut,v) = ρ * ut⊙v
 a_ΩINS(u,v) = μ * ∇(u)⊙∇(v) 
@@ -124,27 +144,27 @@ sp_sΩINS(w,p,v)    = τ_SUPG(w)     *  conv(w,∇(v)) ⋅ ∇(p)
 st_sΩINS(w,ut,v)   = τ_SUPG(w) * ρ *  conv(w,∇(v)) ⋅ ut
 sc_sΩINS(w,u,v)    = τ_SUPG(w) * ρ *  conv(w,∇(v)) ⋅ conv(u, ∇(u)) 
 dsc_sΩINS(w,u,du,v)= τ_SUPG(w) * ρ *  conv(w,∇(v)) ⋅ dconv(du, ∇(du), u, ∇(u)) 
-ϕ_sΩINS(w,v,t)     = τ_SUPG(w)     *  conv(w,∇(v)) ⋅ f(t)  
+ϕ_sΩINS(w,v,t)     = τ_SUPG(w)     *  conv(w,∇(v)) ⋅ f(t)
 
 resINS(t,(u,p),(ut,pt),(v,q)) = 
-∫( ( m_Ω(ut,v) + a_Ω(u,v) + b_Ω(v,p) + b_Ω(u,q) - v⋅f(t) + q*g(t) + c_Ω(u,v)  # + ρ * 0.5 * (∇⋅u) * u ⊙ v  
-+1*(- sp_Ω(u,p,q)  -  st_Ω(u,ut,q)   + ϕ_Ω(u,q,t)     - sc_Ω(u,u,q) )
-+1*(- sp_sΩ(u,p,v) - st_sΩ(u,ut,v)  + ϕ_sΩ(u,v,t)    - sc_sΩ(u,u,v) )))dΩ #+
+∫( ( m_ΩINS(ut,v) + a_ΩINS(u,v) + b_ΩINS(v,p) + b_ΩINS(u,q) - v⋅fINS_u(t) + q*fINS_p(t) + c_ΩINS(u,v)  # + ρ * 0.5 * (∇⋅u) * u ⊙ v  
++1*(- sp_ΩINS(u,p,q)  -  st_ΩINS(u,ut,q)   + ϕ_ΩINS(u,q,t)     - sc_ΩINS(u,u,q) )
++1*(- sp_sΩINS(u,p,v) - st_sΩINS(u,ut,v)  + ϕ_sΩINS(u,v,t)    - sc_sΩINS(u,u,v) )))dΩ #+
 #∫( a_Γ(u,v)+b_Γ(u,q)+b_Γ(v,p) - ud(t) ⊙(  ( γ(u)/h )*v - μ * n_Γ⋅∇(v) + q*n_Γ )  )dΓ #+
 #∫(μ * - v⋅(n_Γn⋅∇(u_Γn(t))) + (n_Γn⋅v)*p_Γn(t) )dΓn + 
 #∫( i_Γg(u,u,v) - j_Γg(u,p,q) )dΓg
 
 jacINS(t,(u,p),(ut,pt),(du,dp),(v,q)) =
-∫( ( a_Ω(du,v) + b_Ω(v,dp) + b_Ω(du,q)  + dc_Ω(u, du, v) # + ρ * 0.5 * (∇⋅u) * du ⊙ v 
-+1* ( - sp_Ω(u,dp,q)  - dsc_Ω(u,u,du,q) )
-+1*(- sp_sΩ(u,dp,v) - dsc_sΩ(u,u,du,v) ) ))dΩ #+ 
+∫( ( a_ΩINS(du,v) + b_ΩINS(v,dp) + b_ΩINS(du,q)  + dc_ΩINS(u, du, v) # + ρ * 0.5 * (∇⋅u) * du ⊙ v 
++1* ( - sp_ΩINS(u,dp,q)  - dsc_ΩINS(u,u,du,q) )
++1*(- sp_sΩINS(u,dp,v) - dsc_sΩINS(u,u,du,v) ) ))dΩ #+ 
 #∫( a_Γ(du,v)+b_Γ(du,q)+b_Γ(v,dp)  )dΓ #+
 #∫( i_Γg(u,du,v) - j_Γg(u,dp,q) )dΓg 
 
 jac_tINS(t,(u,p),(ut,pt),(dut,dpt),(v,q)) = 
-∫(  m_Ω(dut,v) 
-+1* ( - st_Ω(u,dut,q) ) 
-+1* (- st_sΩ(u,dut,v) ))dΩ
+∫(  m_ΩINS(dut,v) 
++1* ( - st_ΩINS(u,dut,q) ) 
++1* (- st_sΩINS(u,dut,v) ))dΩ
 
 #interior terms
 m_ΩAD(ct,w) = ct * w 
@@ -173,9 +193,16 @@ jac_tAD(t,(c,m),(ct,mt),(dct,dmt),(w,g)) =
 ∫(  m_ΓAD(dmt,g)   )dΓn
 
 
-function SolveNavierStokes(op)
+#function SolveNavierStokes(op)
+op = TransientFEOperator(resINS,jacINS,jac_tINS,XINS,YINS)
+xh0 = xINSh0
 
-ls = PardisoSolver(op.assem_t.matrix_type)
+t0=0.0
+dt=Δt
+tF=1.0
+θ=1
+
+ls = LUSolver() # PardisoSolver(op.assem_t.matrix_type)
 nls = NewtonRaphsonSolver(ls,1e-5,30)
 odes = ThetaMethod(nls, dt, θ)
 solver = TransientFESolver(odes)
@@ -215,69 +242,18 @@ epl2=last(epl2)
 
 (eul2, epl2)
 
-end #function INS
+#end #function INS
 
 
 
-op = TransientFEOperator(res,jac,jac_t,X,Y)
+SolveNavierStokes(op)
 
+#=
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-op = TransientFEOperator(res,jac,jac_t,XAD,YAD)
+op = TransientFEOperator(resAD,jacAD,jac_tAD,XAD,YAD)
 
 θ = 1
-t0 = 0.0
-tF = 1.0
-dt = 1.0
+
 
 ls = LUSolver()
 odes = ThetaMethod(ls,dt,θ)
@@ -299,5 +275,6 @@ for (xh_tn, tn) in sol_t
   eml2 = sqrt(sum( ∫(l2(em))dΩ ))
   @test eml2 < tol
 end
+=#
 
 end #module
