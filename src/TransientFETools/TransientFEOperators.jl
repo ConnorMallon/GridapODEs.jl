@@ -143,14 +143,16 @@ get_trial(op::TransientFEOperatorFromWeakForm) = op.trial
 
 function allocate_residual(op::TransientFEOperatorFromWeakForm,uh::FEFunction,cache)
   v = get_cell_shapefuns(get_test(op))
-  vecdata = collect_cell_vector(op.res(0.0,uh,uh,v))
+  V = get_test(op)
+  vecdata = collect_cell_vector(V,op.res(0.0,uh,uh,v))
   allocate_vector(op.assem_t,vecdata)
 end
 
 function residual!(b::AbstractVector,op::TransientFEOperatorFromWeakForm,
   t::Real,uh::FEFunction,uh_t::FEFunction,cache)
   v = get_cell_shapefuns(get_test(op))
-  vecdata = collect_cell_vector(op.res(t,uh,uh_t,v))
+  V = get_test(op)
+  vecdata = collect_cell_vector(V,op.res(t,uh,uh_t,v))
   assemble_vector!(b,op.assem_t,vecdata)
   b
 end
@@ -199,14 +201,18 @@ function matdata_jacobian(op::TransientFEOperatorFromWeakForm,t::Real,uh::FEFunc
   Uh = evaluate(get_trial(op),nothing)
   du = get_cell_shapefuns_trial(Uh)
   v = get_cell_shapefuns(get_test(op))
-  matdata = collect_cell_matrix(op.jac(t,uh,uh_t,du,v))
+  U = allocate_trial_space(get_trial(op))
+  V = get_test(op)
+  matdata = collect_cell_matrix(U,V,op.jac(t,uh,uh_t,du,v))
 end
 
 function matdata_jacobian_t(op::TransientFEOperatorFromWeakForm,t::Real,uh::FEFunction,uh_t::FEFunction,duht_du::Real)
   Uh = evaluate(get_trial(op),nothing)
   du_t = get_cell_shapefuns_trial(Uh)
   v = get_cell_shapefuns(get_test(op))
-  matdata = collect_cell_matrix(duht_du*op.jac_t(t,uh,uh_t,du_t,v))
+  U = allocate_trial_space(get_trial(op))
+  V = get_test(op)
+  matdata = collect_cell_matrix(U,V,duht_du*op.jac_t(t,uh,uh_t,du_t,v))
 end
 
 # Tester

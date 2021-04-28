@@ -120,7 +120,7 @@ residual!(r,op,0.1,uh,uh,cache)
 jacobian!(J,op,1.0,uh,uh10,cache)
 jacobian_t!(J,op,1.0,uh,uh10,10.0,cache)
 
-u0 = get_free_values(uh0)
+u0 = get_free_dof_values(uh0)
 odes
 solver = odes
 t0 = 0.0
