@@ -38,8 +38,8 @@ c(t::Real) = x -> c(x,t)
 m(x,t) = 0 # (x[1]*x[2]+x[2])*t  #we can choose m such that ∇c.n-f_c=0 --> m = c-∇c.n on Γ 
 m(t::Real) = x -> m(x,t)
 
-fAD_c(t) = x -> 0 #∂t(c)(x,t) - Δ(c(t))(x) +  β(t)(x)⋅∇(c(t))(x)
-fAD_m(t) = x -> 0 #∂t(m)(x,t) - (c(t)(x) - m(t)(x))
+fAD_c(t) = x -> ∂t(c)(x,t) - Δ(c(t))(x) +  β(t)(x)⋅∇(c(t))(x)
+fAD_m(t) = x -> ∂t(m)(x,t) - (c(t)(x) - m(t)(x))
 
 #model
 L=1
@@ -138,13 +138,14 @@ i=0
 for (xh_tn, tn) in sol_t
   global _t_n
   _t_n += dt
+  @show _t_n
   global i += 1
   ec = c(tn) - xh_tn[1]
   ecl2 = sqrt(sum( ∫(l2(ec))dΩ ))
-  #@test ecl2 < tol
+  @test ecl2 < tol
   em = m(tn) - xh_tn[2]
   eml2 = sqrt(sum( ∫(l2(em))dΩ ))
-  #@test eml2 < tol
+  @test eml2 < tol
   u_β = 0*xh_tn[1] + β(tn)
   writevtk(Ω,"/home/user/Documents/data/tmp/AD_tests_$(i)",cellfields=["c"=>xh_tn[1],"m"=>xh_tn[2],"u"=>u_β])
 end
