@@ -225,7 +225,7 @@ get_order(op::TransientFEOperatorFromWeakForm) = op.order
 
 function allocate_residual(op::TransientFEOperatorFromWeakForm,uh::FEFunction,cache)
   V = get_test(op)
-  v = get_fe_basis(V)
+  v = get_cell_shapefuns(V)
   xh = ()
   for i in 1:get_order(op)+1
     xh = (xh...,uh)
